@@ -1,0 +1,19 @@
+server:
+  port: 8083
+  timeout: 5s
+  idle_timeout: 60s
+  user: "myuser"
+  password: "mypass"
+
+database:
+  host: localhost
+  port: 5432
+  name: avito_db
+  user: aleksandrbalin
+  password: # leave blank if you want to load from the $DB_PASSWORD environment variable
+
+logger:
+  level: debug # debug / info / prod
+
+auth:
+  jwt_secret: secret_key # Use the $JWT_SECRET environment variable for security
