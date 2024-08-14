@@ -9,6 +9,11 @@ import (
 	"avito/internal/domain/models"
 )
 
+type HouseRepo interface {
+	CreateHouse(ctx context.Context, house *models.House) error
+	SubscribeToHouse(ctx context.Context, houseID int, email string) error
+}
+
 type Repository struct {
 	db     *sql.DB
 	logger *slog.Logger
@@ -39,3 +44,7 @@ func (r *Repository) CreateHouse(ctx context.Context, house *models.House) error
 }
 
 // TODO: /house/{id}/subscribe
+func (r *Repository) SubscribeToHouse(ctx context.Context, houseID int, email string) error {
+	const op = "repository.house.SubscribeToHouse"
+	return nil
+}

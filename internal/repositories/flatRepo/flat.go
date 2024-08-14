@@ -9,6 +9,12 @@ import (
 	"avito/internal/domain/models"
 )
 
+type FlatRepo interface {
+	CreateFlat(ctx context.Context, flat *models.Flat) (int, error)
+	GetFlatsByHouseID(ctx context.Context, houseID int) ([]*models.Flat, error)
+	UpdateFlatStatus(ctx context.Context, flatID int, status string) (*models.Flat, error)
+}
+
 type Repository struct {
 	db     *sql.DB
 	logger *slog.Logger
@@ -40,6 +46,7 @@ func (r *Repository) CreateFlat(ctx context.Context, flat *models.Flat) (int, er
 }
 
 // GetFlatsByHouseID - AuthOnly
+// TODO: Для обычных пользователей возвращаются только квартиры в статусе approved, для модераторов - в любом статусе
 func (r *Repository) GetFlatsByHouseID(ctx context.Context, houseID int) ([]*models.Flat, error) {
 	const op = "repository.flat.GetFlatsByHouseID"
 
@@ -71,17 +78,30 @@ func (r *Repository) GetFlatsByHouseID(ctx context.Context, houseID int) ([]*mod
 }
 
 // UpdateFlatStatus - OnlyModerator
-// TODO: собрать все данные в слое хендлера для возврата инфы о квартире
-func (r *Repository) UpdateFlatStatus(ctx context.Context, flatID int, status string) error {
+func (r *Repository) UpdateFlatStatus(ctx context.Context, flatID int, status string) (*models.Flat, error) {
 	const op = "repository.flat.UpdateFlatStatus"
 
-	query := "UPDATE flats SET status = $1 WHERE id = $2"
-	_, err := r.db.ExecContext(ctx, query, status, flatID)
+	query := `
+		UPDATE flats
+		SET status = $1
+		WHERE id = $2
+		RETURNING id, house_id, flat_number, price, rooms, status
+	`
+
+	var flat models.Flat
+	err := r.db.QueryRowContext(ctx, query, status, flatID).Scan(
+		&flat.ID,
+		&flat.HouseID,
+		&flat.FlatNumber,
+		&flat.Price,
+		&flat.Rooms,
+		&flat.Status,
+	)
+
 	if err != nil {
-		r.logger.Error("Failed to update flat status", "op", op, "error", err, "flatID", flatID, "status", status)
-		return fmt.Errorf("%s: %w", op, err)
+		r.logger.Error("Failed to update and retrieve flat data", slog.String("op", op), "error", err, slog.Int("flatID", flatID))
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	r.logger.Info("Flat status updated success", "op", op, "flatID", flatID, "status", status)
-	return nil
+	return &flat, nil
 }

@@ -19,7 +19,7 @@ func New(cfg *config.Config) (*sql.DB, error) {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		dbURL = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
 			cfg.Database.User,
 			cfg.Database.Password,
 			cfg.Database.Host,

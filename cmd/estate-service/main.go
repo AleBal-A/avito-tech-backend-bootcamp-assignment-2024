@@ -3,9 +3,11 @@ package main
 import (
 	"avito/internal/config"
 	"avito/internal/lib/logger"
+	"avito/internal/setup"
 	"avito/internal/storage"
 	"fmt"
 	"log/slog"
+	"net/http"
 )
 
 func main() {
@@ -27,8 +29,18 @@ func main() {
 		log.Error("Could not connect to the database", "error", err)
 		panic(err)
 	}
+	defer conn.Close()
+
+	authH, houseH, flatH := setup.InitLayers(conn, cfg, log)
+	router := setup.SetupRouter(authH, houseH, flatH, log)
 
 	// TODO: init router
+
+	log.Info("Starting server on port ", slog.String("port", cfg.Server.Port))
+	err = http.ListenAndServe(":"+cfg.Server.Port, router)
+	if err != nil {
+		log.Error("Server startup error", "error", err)
+	}
 }
 
 /*

@@ -20,9 +20,10 @@ CREATE TABLE IF NOT EXISTS houses (
 CREATE TABLE IF NOT EXISTS flats (
     id SERIAL PRIMARY KEY,
     house_id INT NOT NULL REFERENCES houses(id),
-    flat_number INT NOT NULL,
+    flat_number INT,
     price INT NOT NULL,
     rooms INT NOT NULL,
-    status VARCHAR(50) NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    status VARCHAR(50) NOT NULL DEFAULT 'created',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (flat_number, house_id)
 );
