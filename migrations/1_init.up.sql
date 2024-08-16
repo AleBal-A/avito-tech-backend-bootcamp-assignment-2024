@@ -4,8 +4,7 @@ CREATE TABLE IF NOT EXISTS users (
      id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
      email VARCHAR(255) UNIQUE NOT NULL,
      password_hash TEXT NOT NULL,
-     role VARCHAR(50) NOT NULL,
-     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+     role VARCHAR(50) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS houses (
@@ -24,6 +23,6 @@ CREATE TABLE IF NOT EXISTS flats (
     price INT NOT NULL,
     rooms INT NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'created',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    moderator_id VARCHAR(255),
     UNIQUE (flat_number, house_id)
 );

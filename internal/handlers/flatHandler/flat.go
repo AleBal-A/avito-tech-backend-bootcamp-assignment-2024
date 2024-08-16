@@ -1,8 +1,12 @@
 package flatHandler
 
 import (
+	"avito/internal/custommiddleware"
+	"avito/internal/domain/models"
+	"avito/internal/handlers/common"
 	"avito/internal/services/flatService"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 )
@@ -17,7 +21,7 @@ type Handler struct {
 	logger      *slog.Logger
 }
 
-func NewHandler(flatService flatService.FlatService, logger *slog.Logger) *Handler {
+func NewHandler(flatService flatService.FlatService, logger *slog.Logger) FlatHandler {
 	return &Handler{
 		flatService: flatService,
 		logger:      logger,
@@ -35,14 +39,13 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error("Invalid request", slog.String("op", op), "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	flat, err := h.flatService.Create(r.Context(), req.HouseID, req.FlatNumber, req.Price, req.Rooms)
 	if err != nil {
-		h.logger.Error("Could not create flat", slog.String("op", op), "error", err)
-		http.Error(w, "Could not create flat", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Could not create flat", op, err)
 		return
 	}
 
@@ -50,12 +53,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(flat); err != nil {
-		h.logger.Error("Failed to write response", slog.String("op", op), "error", err)
-		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
 
-// TODO: прописать в мидлваре только для модеров
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	const op = "flatHandler.Update"
 
@@ -66,20 +67,51 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.logger.Error("Invalid request", slog.String("op", op), "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	flat, err := h.flatService.UpdateStatus(r.Context(), req.ID, req.Status)
+	validStatuses := map[string]bool{
+		"created":       true,
+		"approved":      true,
+		"declined":      true,
+		"on moderation": true,
+	}
+	if !validStatuses[req.Status] {
+		h.logger.Error("Invalid status value", slog.String("op", op), slog.String("status", req.Status))
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	claims, ok := r.Context().Value(custommiddleware.ClaimsContextKey).(*models.Claims)
+	if !ok || claims == nil {
+		h.logger.Error("Claims are missing in context", slog.String("op", op))
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	userID := claims.UserID
+	if claims.Role != "moderator" {
+		h.logger.Error("User is not authorized to update flat status", slog.String("op", op), slog.String("user_id", userID))
+		h.logger.Error("claims.Role DEBUG - ", slog.String("op", op), slog.String("claims.Role", claims.Role))
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	flat, err := h.flatService.UpdateStatus(r.Context(), req.ID, req.Status, userID)
 	if err != nil {
-		h.logger.Error("Could not update flat status", slog.String("op", op), slog.Int("flat_id", req.ID), "error", err)
-		http.Error(w, "Could not update flat status", http.StatusInternalServerError)
+		if errors.Is(err, flatService.ErrFlatBeingModerated) {
+			h.logger.Warn("Flat is already being moderated by another user", slog.String("op", op), slog.Int("flat_id", req.ID))
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		h.logger.Error("Failed to update flat status", slog.String("op", op), "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(flat); err != nil {
-		h.logger.Error("Failed to write response", slog.String("op", op), "error", err)
-		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }

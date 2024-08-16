@@ -25,7 +25,7 @@ type Service struct {
 	logger    *slog.Logger
 }
 
-func NewService(repo authRepo.AuthRepo, jwtSecret string, logger *slog.Logger) *Service {
+func NewService(repo authRepo.AuthRepo, jwtSecret string, logger *slog.Logger) AuthService {
 	return &Service{
 		repo:      repo,
 		jwtSecret: jwtSecret,

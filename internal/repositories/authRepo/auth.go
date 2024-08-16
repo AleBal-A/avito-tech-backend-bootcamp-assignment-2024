@@ -22,7 +22,7 @@ type Repository struct {
 	logger *slog.Logger
 }
 
-func NewRepository(db *sql.DB, logger *slog.Logger) *Repository {
+func NewRepository(db *sql.DB, logger *slog.Logger) AuthRepo {
 	return &Repository{db: db, logger: logger}
 }
 

@@ -4,13 +4,13 @@ import (
 	"avito/internal/domain/models"
 	"avito/internal/repositories/flatRepo"
 	"context"
+	"errors"
 	"log/slog"
 )
 
 type FlatService interface {
 	Create(ctx context.Context, houseID int, flatNumber *int, price, rooms int) (*models.Flat, error)
-	UpdateStatus(ctx context.Context, flatID int, status string) (*models.Flat, error)
-	GetFlatsByHouseID(ctx context.Context, houseID int) ([]models.Flat, error)
+	UpdateStatus(ctx context.Context, flatID int, newStatus string, moderatorID string) (*models.Flat, error)
 }
 
 type Service struct {
@@ -19,11 +19,12 @@ type Service struct {
 	logger      *slog.Logger
 }
 
-func NewService(repo flatRepo.FlatRepo, logger *slog.Logger) *Service {
+var ErrFlatBeingModerated = errors.New("flat is already being moderated by another user")
+
+func NewService(repo flatRepo.FlatRepo, logger *slog.Logger) FlatService {
 	return &Service{
-		repo:        repo,
-		isModerator: isModerator,
-		logger:      logger,
+		repo:   repo,
+		logger: logger,
 	}
 }
 
@@ -54,50 +55,33 @@ func (s *Service) Create(ctx context.Context, houseID int, flatNumber *int, pric
 	return newFlat, nil
 }
 
-func (s *Service) UpdateStatus(ctx context.Context, flatID int, status string) (*models.Flat, error) {
+func (s *Service) UpdateStatus(ctx context.Context, flatID int, newStatus string, moderatorID string) (*models.Flat, error) {
 	const op = "flatService.UpdateStatus"
 
-	flat, err := s.repo.UpdateFlatStatus(ctx, flatID, status)
+	flat, err := s.repo.GetFlatByID(ctx, flatID)
 	if err != nil {
-		s.logger.Error("Failed to update flat status", slog.String("op", op), slog.Int("flatID", flatID), slog.String("status", status))
+		s.logger.Error("Failed to retrieve flat", slog.String("op", op), "error", err)
 		return nil, err
 	}
 
-	s.logger.Info("Flat status updated successfully", slog.String("op", op), slog.Int("flatID", flat.ID), slog.String("status", flat.Status))
-	return flat, nil
-}
+	if flat.Status == "on moderation" && (flat.ModeratorID == nil || *flat.ModeratorID != moderatorID) {
+		s.logger.Error("Flat is already being moderated by another user", slog.String("op", op))
+		return nil, ErrFlatBeingModerated
+	}
 
-// TODO: прописать в мидлваре только для модеров
-func (s *Service) GetFlatsByHouseID(ctx context.Context, houseID int) ([]models.Flat, error) {
-	const op = "flatService.GetFlatsByHouseID"
+	flat.Status = newStatus
+	if newStatus == "on moderation" {
+		flat.ModeratorID = &moderatorID
+	} else {
+		flat.ModeratorID = nil
+	}
 
-	flats, err := s.repo.GetFlatsByHouseID(ctx, houseID)
+	updatedFlat, err := s.repo.UpdateFlatStatus(ctx, flatID, newStatus, flat.ModeratorID)
 	if err != nil {
-		s.logger.Error("Failed to get flats by house ID",
-			slog.String("op", op), "error", err,
-			slog.Int("houseID", houseID),
-		)
+		s.logger.Error("Failed to update flat status", slog.String("op", op), "error", err)
 		return nil, err
 	}
 
-	isMod := s.isModerator(ctx)
-
-	var result []models.Flat
-	for _, flat := range flats {
-		// TODO: поставить фильтрацию на уровне Repo
-		if isMod || flat.Status == "approved" {
-			result = append(result, *flat)
-		}
-	}
-
-	return result, nil
-}
-
-func isModerator(ctx context.Context) bool {
-	claims, ok := ctx.Value("user").(*models.Claims)
-	if !ok || claims == nil {
-		return false
-	}
-
-	return claims.Role == "moderator"
+	s.logger.Debug("Flat status updated successfully", slog.String("op", op), slog.Int("flatID", flatID))
+	return updatedFlat, nil
 }

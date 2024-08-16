@@ -9,10 +9,6 @@ import (
 	"avito/internal/config"
 )
 
-//type Storage struct {
-//	db *sql.DB
-//}
-
 // New creates a new connection of the SQL storage.
 func New(cfg *config.Config) (*sql.DB, error) {
 	const op = "database.postgresql.New"

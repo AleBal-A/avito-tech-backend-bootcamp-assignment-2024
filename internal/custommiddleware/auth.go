@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-type contextKey string
+type ContextKey string
 
-const userContextKey = contextKey("user")
+const ClaimsContextKey ContextKey = "claims"
 
-func AuthMiddleware(authHandler authHandler.AuthHandler, logger *slog.Logger) func(next http.Handler) http.Handler {
+func AuthMiddleware(authH authHandler.AuthHandler, logger *slog.Logger) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			const op = "middleware.AuthMiddleware"
@@ -21,59 +21,60 @@ func AuthMiddleware(authHandler authHandler.AuthHandler, logger *slog.Logger) fu
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
 				logger.Error("Missing Authorization header", slog.String("op", op))
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
 
 			tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 			if tokenString == authHeader {
 				logger.Error("Invalid Authorization header format", slog.String("op", op))
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
 
-			claims, err := authHandler.ValidateToken(tokenString)
+			claims, err := authH.ValidateToken(tokenString)
 			if err != nil {
 				logger.Error("Invalid token", slog.String("op", op), "error", err)
-				http.Error(w, "Invalid token", http.StatusUnauthorized)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
 
-			ctx := context.WithValue(r.Context(), userContextKey, claims)
-			next.ServeHTTP(w, r.WithContext(ctx))
+			// Put claims in context
+			ctx := context.WithValue(r.Context(), ClaimsContextKey, claims)
+			r = r.WithContext(ctx)
+
+			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func RoleMiddleware(allowedRoles []string, logger *slog.Logger) func(next http.HandlerFunc) http.HandlerFunc {
-	return func(next http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
+func RoleMiddleware(allowedRoles []string, logger *slog.Logger) func(next http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			const op = "middleware.RoleMiddleware"
 
-			claims, ok := r.Context().Value(userContextKey).(*models.Claims)
+			claims, ok := r.Context().Value(ClaimsContextKey).(*models.Claims)
 			if !ok || claims == nil {
 				logger.Error("Unauthorized access attempt", slog.String("op", op))
-				http.Error(w, "Unauthorized", http.StatusUnauthorized)
+				http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 				return
 			}
 
-			// list of allowed roles
-			roleAllowed := false
+			roleValid := false
 			for _, role := range allowedRoles {
-				if claims.Role == role {
-					roleAllowed = true
+				if strings.EqualFold(role, claims.Role) {
+					roleValid = true
 					break
 				}
 			}
 
-			if !roleAllowed {
+			if !roleValid {
 				logger.Warn("Forbidden access attempt", slog.String("op", op), slog.String("role", claims.Role))
-				http.Error(w, "Forbidden", http.StatusForbidden)
+				http.Error(w, http.StatusText(http.StatusForbidden), http.StatusForbidden)
 				return
 			}
 
-			logger.Info("Access granted", slog.String("op", op), slog.String("role", claims.Role))
 			next.ServeHTTP(w, r)
-		}
+		})
 	}
 }

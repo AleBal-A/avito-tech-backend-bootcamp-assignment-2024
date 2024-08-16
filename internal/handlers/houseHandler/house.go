@@ -1,17 +1,21 @@
 package houseHandler
 
 import (
+	"avito/internal/custommiddleware"
+	"avito/internal/domain/models"
+	"avito/internal/handlers/common"
 	"avito/internal/services/houseService"
 	"encoding/json"
 	"errors"
-	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/chi/v5"
 	"log/slog"
 	"net/http"
+	"strconv"
 )
 
 type HouseHandler interface {
 	Create(w http.ResponseWriter, r *http.Request)
-	writeErrorResponse(w http.ResponseWriter, r *http.Request, statusCode int, message, operation string, err error)
+	GetFlatsByHouseID(w http.ResponseWriter, r *http.Request)
 }
 
 type Handler struct {
@@ -19,14 +23,13 @@ type Handler struct {
 	logger       *slog.Logger
 }
 
-func NewHandler(houseService houseService.HouseService, logger *slog.Logger) *Handler {
+func NewHandler(houseService houseService.HouseService, logger *slog.Logger) HouseHandler {
 	return &Handler{
 		houseService: houseService,
 		logger:       logger,
 	}
 }
 
-// TODO: only moderator
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	const op = "houseHandler.Create"
 
@@ -39,7 +42,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	h.logger.Debug("Start of creating a house", slog.String("op", op))
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.writeErrorResponse(w, r, http.StatusBadRequest, "Invalid input data", op, err)
+		h.logger.Error("Invalid input data", slog.String("op", op), "error", err)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
@@ -48,9 +52,10 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	house, err := h.houseService.Create(r.Context(), req.Address, req.YearBuilt, req.Builder)
 	if err != nil {
 		if errors.Is(err, houseService.ErrValidation) {
-			h.writeErrorResponse(w, r, http.StatusBadRequest, "Validation error", op, err)
+			h.logger.Error("Validation error", slog.String("op", op), "error", err)
+			w.WriteHeader(http.StatusBadRequest)
 		} else {
-			h.writeErrorResponse(w, r, http.StatusInternalServerError, "Server error", op, err)
+			common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Server error", op, err)
 		}
 		return
 	}
@@ -59,31 +64,43 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(house); err != nil {
-		h.writeErrorResponse(w, r, http.StatusInternalServerError, "Failed to write response", op, err)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
 
-func (h *Handler) writeErrorResponse(w http.ResponseWriter, r *http.Request, statusCode int, message, operation string, err error) {
-	requestID := middleware.GetReqID(r.Context())
-	if requestID == "" {
-		requestID = "unknown"
+func (h *Handler) GetFlatsByHouseID(w http.ResponseWriter, r *http.Request) {
+	const op = "houseHandler.GetFlatsByHouseID"
+
+	houseIDStr := chi.URLParam(r, "id")
+	if houseIDStr == "" {
+		h.logger.Error("House ID is missing in the request", slog.String("op", op))
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 
-	h.logger.Error(message, slog.String("op", operation), slog.String("request_id", requestID), "error", err)
+	houseID, err := strconv.Atoi(houseIDStr)
+	if err != nil {
+		h.logger.Error("Invalid house ID format", slog.String("op", op), "error", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
 
-	response := struct {
-		Message   string `json:"message"`
-		RequestID string `json:"request_id"`
-		Code      int    `json:"code"`
-	}{
-		Message:   message,
-		RequestID: requestID,
-		Code:      statusCode,
+	claims, ok := r.Context().Value(custommiddleware.ClaimsContextKey).(*models.Claims)
+	if !ok || claims == nil {
+		h.logger.Error("Claims are missing in context", slog.String("op", op))
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	flats, err := h.houseService.GetFlatsByHouseID(r.Context(), houseID, claims.Role)
+	if err != nil {
+		h.logger.Error("Failed to get flats by house ID", slog.String("op", op), "error", err)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Could not retrieve flats", op, err)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to write error response", slog.String("op", operation), slog.String("request_id", requestID), "error", err)
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"flats": flats}); err != nil {
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }

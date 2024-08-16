@@ -11,6 +11,7 @@ import (
 type HouseService interface {
 	Create(ctx context.Context, address string, yearBuilt int, builder *string) (*models.House, error)
 	Subscribe(ctx context.Context, houseID int, email string) error
+	GetFlatsByHouseID(ctx context.Context, houseID int, role string) ([]models.Flat, error)
 }
 
 type Service struct {
@@ -20,7 +21,7 @@ type Service struct {
 
 var ErrValidation = errors.New("validation error")
 
-func NewService(repo houseRepo.HouseRepo, logger *slog.Logger) *Service {
+func NewService(repo houseRepo.HouseRepo, logger *slog.Logger) HouseService {
 	return &Service{repo: repo, logger: logger}
 }
 
@@ -57,4 +58,17 @@ func (s *Service) Subscribe(ctx context.Context, houseID int, email string) erro
 
 	s.logger.Debug("User subscribed to house successfully", slog.String("op", op), slog.Int("houseID", houseID), slog.String("email", email))
 	return nil
+}
+
+func (s *Service) GetFlatsByHouseID(ctx context.Context, houseID int, role string) ([]models.Flat, error) {
+	const op = "houseService.GetFlatsByHouseID"
+
+	flats, err := s.repo.GetFlatsByHouseID(ctx, houseID, role)
+	if err != nil {
+		s.logger.Error("Failed to get flats by house ID", slog.String("op", op), "error", err, slog.Int("houseID", houseID))
+		return nil, err
+	}
+
+	s.logger.Debug("Returning all flats", slog.String("op", op), slog.Int("houseID", houseID))
+	return flats, nil
 }

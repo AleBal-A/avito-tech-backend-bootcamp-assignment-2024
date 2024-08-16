@@ -1,13 +1,15 @@
 package authHandler
 
 import (
-	"avito/internal/domain/models"
-	"avito/internal/repositories"
-	"avito/internal/services/authService"
+	"avito/internal/handlers/common"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"avito/internal/domain/models"
+	"avito/internal/repositories"
+	"avito/internal/services/authService"
 )
 
 type AuthHandler interface {
@@ -22,7 +24,7 @@ type Handler struct {
 	logger      *slog.Logger
 }
 
-func NewHandler(authService authService.AuthService, logger *slog.Logger) *Handler {
+func NewHandler(authService authService.AuthService, logger *slog.Logger) AuthHandler {
 	return &Handler{
 		authService: authService,
 		logger:      logger,
@@ -37,20 +39,19 @@ func (h *Handler) DummyLogin(w http.ResponseWriter, r *http.Request) {
 	userType := r.URL.Query().Get("user_type")
 	if userType == "" {
 		h.logger.Error("User type is missing", slog.String("op", op))
-		http.Error(w, "User type is required", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if userType != "client" && userType != "moderator" {
 		h.logger.Error("Invalid user type", slog.String("op", op), slog.String("user_type", userType))
-		http.Error(w, "Invalid user type. Allowed values are 'client' or 'moderator'", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	token, err := h.authService.GenerateToken("userID", userType)
 	if err != nil {
-		h.logger.Error("Could not generate token", slog.String("op", op), "error", err)
-		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Could not generate token", op, err)
 		return
 	}
 
@@ -58,8 +59,7 @@ func (h *Handler) DummyLogin(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"token": token}); err != nil {
-		h.logger.Error("Failed to write response", slog.String("op", op), "error", err)
-		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
 
@@ -73,26 +73,24 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.Error("Invalid request in Register", slog.String("op", op), "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		h.logger.Error("Invalid request", slog.String("op", op), "error", err)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	if req.Role != "client" && req.Role != "moderator" {
-		h.logger.Error("Invalid user type", slog.String("op", op), slog.String("user_type", req.Role))
-		http.Error(w, "Invalid user type. Allowed values are 'client' or 'moderator'", http.StatusBadRequest)
+		h.logger.Error("Invalid user type", slog.String("op", op), slog.String("role", req.Role))
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	user, err := h.authService.Register(r.Context(), req.Email, req.Password, req.Role)
 	if err != nil {
 		if errors.Is(err, repositories.ErrUserExists) {
-			h.logger.Warn("User already exists", slog.String("op", op), slog.String("email", req.Email))
-			http.Error(w, "User already exists", http.StatusConflict)
+			common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "User already exists", op, err)
 			return
 		}
-		h.logger.Error("Could not register user", slog.String("op", op), "error", err)
-		http.Error(w, "Could not register user", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Could not register user", op, err)
 		return
 	}
 
@@ -109,8 +107,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("User registered successfully", slog.String("op", op), slog.String("email", req.Email))
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		h.logger.Error("Failed to write response", slog.String("op", op), "error", err)
-		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
 
@@ -122,22 +119,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		h.logger.Error("Invalid request in Login", slog.String("op", op), "error", err)
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		h.logger.Error("Invalid request", slog.String("op", op), "error", err)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
 	user, err := h.authService.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		h.logger.Error("Could not login user", slog.String("op", op), "error", err)
-		http.Error(w, "Пользователь не найден", http.StatusNotFound)
+		h.logger.Error("User not found", slog.String("op", op), slog.String("email", req.Email), "error", err)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	token, err := h.authService.GenerateToken(user.ID, user.Role)
 	if err != nil {
-		h.logger.Error("Could not generate token in Login", slog.String("op", op), "error", err)
-		http.Error(w, "Could not generate token", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Could not generate token", op, err)
 		return
 	}
 
@@ -145,8 +141,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"token": token}); err != nil {
-		h.logger.Error("Failed to write response", slog.String("op", op), "error", err)
-		http.Error(w, "Failed to write response", http.StatusInternalServerError)
+		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
 

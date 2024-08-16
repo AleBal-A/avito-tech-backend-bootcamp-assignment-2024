@@ -2,10 +2,11 @@ package config
 
 import (
 	"flag"
-	"github.com/ilyakaznacheev/cleanenv"
 	"log"
 	"os"
 	"time"
+
+	"github.com/ilyakaznacheev/cleanenv"
 )
 
 type Config struct {
@@ -19,8 +20,6 @@ type ServerConfig struct {
 	Port        string        `yaml:"port"`
 	Timeout     time.Duration `yaml:"timeout" env-default:"4s"`
 	IdleTimeout time.Duration `yaml:"idle_timeout" env-default:"60s"`
-	//User        string
-	//Password    string
 }
 
 type DatabaseConfig struct {

@@ -27,15 +27,20 @@ func SetupRouter(
 	r.Post("/register", authH.Register)
 	r.Post("/login", authH.Login)
 
-	// Protected routes
+	// Protected routes moderationsOnly
+	r.Group(func(r chi.Router) {
+		r.Use(custommiddleware.AuthMiddleware(authH, logger))
+		r.Use(custommiddleware.RoleMiddleware([]string{"moderator"}, logger))
+
+		r.Post("/house/create", houseH.Create)
+		r.Post("/flat/update", flatH.Update)
+	})
+	// Protected routes authOnly
 	r.Group(func(r chi.Router) {
 		r.Use(custommiddleware.AuthMiddleware(authH, logger))
 
-		r.Post("/house/create", custommiddleware.RoleMiddleware([]string{"moderator"}, logger)(houseH.Create))
-		//r.Get("/house/{id}", )
-
-		r.Post("/flat/create", custommiddleware.RoleMiddleware([]string{"client", "moderator"}, logger)(flatH.Create))
-		r.Post("/flat/{id}/update", custommiddleware.RoleMiddleware([]string{"moderator"}, logger)(flatH.Update))
+		r.Get("/house/{id}", houseH.GetFlatsByHouseID)
+		r.Post("/flat/create", flatH.Create)
 	})
 
 	return r

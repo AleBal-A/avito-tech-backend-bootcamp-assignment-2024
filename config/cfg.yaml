@@ -10,7 +10,7 @@ database:
   port: 5432
   name: avito_db
   user: aleksandrbalin
-  password: # leave blank if you want to load from the $DB_PASSWORD environment variable
+  password: 0000 # leave blank if you want to load from the $DB_PASSWORD environment variable
 
 logger:
   level: debug # debug / info / prod
