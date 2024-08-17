@@ -13,7 +13,6 @@ type FlatRepo interface {
 	CreateFlat(ctx context.Context, flat *models.Flat) (int, error)
 	GetFlatsByHouseID(ctx context.Context, houseID int) ([]*models.Flat, error)
 	UpdateFlatStatus(ctx context.Context, flatID int, status string, moderatorID *string) (*models.Flat, error)
-	//GetFlatByID(ctx context.Context, houseID int, role string) ([]models.Flat, error)
 	GetFlatByID(ctx context.Context, flatID int) (*models.Flat, error)
 }
 
@@ -106,48 +105,6 @@ func (r *Repository) UpdateFlatStatus(ctx context.Context, flatID int, status st
 
 	return &flat, nil
 }
-
-//func (r *Repository) GetFlatByID(ctx context.Context, houseID int, role string) ([]models.Flat, error) {
-//	const op = "repositories.house.GetFlatsByHouseID"
-//
-//	var query string
-//
-//	query = `
-//        SELECT id, house_id, flat_number, price, rooms, status
-//        FROM flats
-//        WHERE house_id = $1
-//    `
-//
-//	if role != "moderator" {
-//		query += " AND status = 'approved'"
-//	}
-//
-//	rows, err := r.db.QueryContext(ctx, query, houseID)
-//	if err != nil {
-//		r.logger.Error("Failed to get flats", "op", op, "error", err, "houseID", houseID)
-//		return nil, fmt.Errorf("%s: %w", op, err)
-//	}
-//	defer rows.Close()
-//
-//	var flats []models.Flat
-//
-//	for rows.Next() {
-//		var flat models.Flat
-//		if err := rows.Scan(&flat.ID, &flat.HouseID, &flat.FlatNumber, &flat.Price, &flat.Rooms, &flat.Status); err != nil {
-//			r.logger.Error("Failed to scan flat", "op", op, "error", err)
-//			return nil, fmt.Errorf("%s: %w", op, err)
-//		}
-//		flats = append(flats, flat)
-//	}
-//
-//	if err := rows.Err(); err != nil {
-//		r.logger.Error("Error during rows iteration", "op", op, "error", err)
-//		return nil, fmt.Errorf("%s: %w", op, err)
-//	}
-//
-//	r.logger.Info("Flats retrieved successfully", "op", op, "houseID", houseID, "flats_count", len(flats))
-//	return flats, nil
-//}
 
 func (r *Repository) GetFlatByID(ctx context.Context, flatID int) (*models.Flat, error) {
 	const op = "repository.flat.GetFlatByID"

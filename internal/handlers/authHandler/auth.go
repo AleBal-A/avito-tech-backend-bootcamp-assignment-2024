@@ -69,7 +69,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email    string `json:"email"`
 		Password string `json:"password"`
-		Role     string `json:"role"`
+		Role     string `json:"user_type"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -95,13 +95,9 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := struct {
-		ID    string `json:"id"`
-		Email string `json:"email"`
-		Role  string `json:"role"`
+		ID string `json:"user_id"`
 	}{
-		ID:    user,
-		Email: req.Email,
-		Role:  req.Role,
+		ID: user,
 	}
 
 	h.logger.Info("User registered successfully", slog.String("op", op), slog.String("email", req.Email))
@@ -115,7 +111,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	const op = "authHandler.Login"
 
 	var req struct {
-		Email    string `json:"email"`
+		Id       string `json:"id"`
 		Password string `json:"password"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -124,9 +120,9 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	user, err := h.authService.Login(r.Context(), req.Email, req.Password)
+	user, err := h.authService.Login(r.Context(), req.Id, req.Password)
 	if err != nil {
-		h.logger.Error("User not found", slog.String("op", op), slog.String("email", req.Email), "error", err)
+		h.logger.Error("User not found", slog.String("op", op), slog.String("id", req.Id), "error", err)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -137,7 +133,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("User logged in successfully", slog.String("op", op), slog.String("email", req.Email))
+	h.logger.Info("User logged in successfully", slog.String("op", op), slog.String("id", req.Id))
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]string{"token": token}); err != nil {

@@ -14,7 +14,7 @@ import (
 
 type AuthService interface {
 	Register(ctx context.Context, email, password, role string) (string, error)
-	Login(ctx context.Context, email, password string) (*models.User, error)
+	Login(ctx context.Context, id, password string) (*models.User, error)
 	GenerateToken(userID string, role string) (string, error)
 	ValidateToken(tokenStr string) (*models.Claims, error)
 }
@@ -57,17 +57,17 @@ func (s *Service) Register(ctx context.Context, email, password, role string) (s
 	return userID, nil
 }
 
-func (s *Service) Login(ctx context.Context, email, password string) (*models.User, error) {
+func (s *Service) Login(ctx context.Context, id, password string) (*models.User, error) {
 	const op = "authService.Login"
 
-	user, err := s.repo.GetUserByEmail(ctx, email)
+	user, err := s.repo.GetUserByEmail(ctx, id)
 	if err != nil {
-		s.logger.Error("Error getting user by email", slog.String("op", op), "error", err)
+		s.logger.Error("Error getting user by id", slog.String("op", op), "error", err)
 		return nil, errors.New("invalid credentials")
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		s.logger.Error("Incorrect credentials", slog.String("op", op), slog.String("email", email))
+		s.logger.Error("Incorrect credentials", slog.String("op", op), slog.String("id", id))
 		return nil, errors.New("invalid credentials")
 	}
 

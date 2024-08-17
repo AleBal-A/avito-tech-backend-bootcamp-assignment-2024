@@ -30,16 +30,16 @@ func (r *Repository) CreateHouse(ctx context.Context, house *models.House) error
 	query := `
 		INSERT INTO houses (address, year_built, builder)
 		VALUES ($1, $2, $3)
-		RETURNING id
+		RETURNING id, created_at, last_flat_added
 	`
 
-	err := r.db.QueryRowContext(ctx, query, house.Address, house.YearBuilt, house.Builder).Scan(&house.ID)
+	err := r.db.QueryRowContext(ctx, query, house.Address, house.YearBuilt, house.Builder).Scan(&house.ID, &house.CreatedAt, &house.LastFlatAdded)
 	if err != nil {
 		r.logger.Error("Failed to create house", "op", op, "error", err)
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	r.logger.Info("House created", "op", op, "houseID", house.ID, "address", house.Address, "year_built", house.YearBuilt)
+	r.logger.Info("House created", "op", op, "houseID", house.ID, "address", house.Address, "year_built", house.YearBuilt, "created_at", house.CreatedAt)
 	return nil
 }
 

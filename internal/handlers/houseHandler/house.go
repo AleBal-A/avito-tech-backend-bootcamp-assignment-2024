@@ -4,6 +4,7 @@ import (
 	"avito/internal/custommiddleware"
 	"avito/internal/domain/models"
 	"avito/internal/handlers/common"
+	"avito/internal/handlers/response"
 	"avito/internal/services/houseService"
 	"encoding/json"
 	"errors"
@@ -35,8 +36,8 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Address   string  `json:"address"`
-		YearBuilt int     `json:"year_built"`
-		Builder   *string `json:"builder"`
+		YearBuilt int     `json:"year"`
+		Builder   *string `json:"developer"`
 	}
 
 	h.logger.Debug("Start of creating a house", slog.String("op", op))
@@ -60,10 +61,19 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := response.HouseResponse{
+		Id:        house.ID,
+		Address:   house.Address,
+		Year:      house.YearBuilt,
+		Developer: checkString(house.Builder),
+		CreatedAt: house.CreatedAt,
+		UpdateAt:  *house.LastFlatAdded,
+	}
+
 	h.logger.Info("House created successfully", slog.String("op", op), slog.Int("house_id", house.ID))
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(house); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
@@ -99,8 +109,26 @@ func (h *Handler) GetFlatsByHouseID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var resp []response.FlatResponse
+	for _, flat := range flats {
+		resp = append(resp, response.FlatResponse{
+			ID:      flat.ID,
+			HouseID: flat.HouseID,
+			Price:   flat.Price,
+			Rooms:   flat.Rooms,
+			Status:  flat.Status,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(map[string]interface{}{"flats": flats}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]interface{}{"flats": resp}); err != nil {
 		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
+}
+
+func checkString(ptr *string) string {
+	if ptr != nil {
+		return *ptr
+	}
+	return ""
 }

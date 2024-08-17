@@ -4,6 +4,7 @@ import (
 	"avito/internal/custommiddleware"
 	"avito/internal/domain/models"
 	"avito/internal/handlers/common"
+	"avito/internal/handlers/response"
 	"avito/internal/services/flatService"
 	"encoding/json"
 	"errors"
@@ -49,10 +50,18 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := response.FlatResponse{
+		ID:      flat.ID,
+		HouseID: flat.HouseID,
+		Price:   flat.Price,
+		Rooms:   flat.Rooms,
+		Status:  flat.Status,
+	}
+
 	h.logger.Info("Flat is created", slog.String("op", op), slog.Int("flat_id", flat.ID))
 
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(flat); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }
@@ -110,8 +119,16 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	resp := response.FlatResponse{
+		ID:      flat.ID,
+		HouseID: flat.HouseID,
+		Price:   flat.Price,
+		Rooms:   flat.Rooms,
+		Status:  flat.Status,
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(flat); err != nil {
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		common.WriteErrorResponse(w, r, h.logger, http.StatusInternalServerError, "Failed to write response", op, err)
 	}
 }

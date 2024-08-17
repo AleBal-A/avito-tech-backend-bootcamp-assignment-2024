@@ -14,7 +14,7 @@ import (
 
 type AuthRepo interface {
 	CreateUser(ctx context.Context, user *models.User) (string, error)
-	GetUserByEmail(ctx context.Context, email string) (*models.User, error)
+	GetUserByEmail(ctx context.Context, id string) (*models.User, error)
 }
 
 type Repository struct {
@@ -48,22 +48,22 @@ func (r *Repository) CreateUser(ctx context.Context, user *models.User) (string,
 }
 
 // GetUserByEmail - Login
-func (r *Repository) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
+func (r *Repository) GetUserByEmail(ctx context.Context, id string) (*models.User, error) {
 	const op = "repositories.auth.GetUserByEmail"
 
-	query := "SELECT id, email, password_hash, role FROM users WHERE email = $1"
+	query := "SELECT id, email, password_hash, role FROM users WHERE id = $1"
 
 	user := &models.User{}
-	err := r.db.QueryRowContext(ctx, query, email).Scan(&user.ID, &user.Email, &user.Password, &user.Role)
+	err := r.db.QueryRowContext(ctx, query, id).Scan(&user.ID, &user.Email, &user.Password, &user.Role)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			r.logger.Warn("User not found", "op", op, "email", email)
+			r.logger.Warn("User not found", "op", op, "id", id)
 			return nil, fmt.Errorf("%s: %w", op, repositories.ErrUserNotFound)
 		}
-		r.logger.Error("Failed to query user by email", "op", op, "error", err)
+		r.logger.Error("Failed to query user by id", "op", op, "error", err)
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	r.logger.Info("User found", "op", op, "email", email)
+	r.logger.Info("User found", "op", op, "id", id)
 	return user, nil
 }

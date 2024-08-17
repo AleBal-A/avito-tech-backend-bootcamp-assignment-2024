@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS houses (
     year_built INT NOT NULL,
     builder VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_flat_added TIMESTAMP WITH TIME ZONE
+    last_flat_added TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS flats (
@@ -23,6 +23,6 @@ CREATE TABLE IF NOT EXISTS flats (
     price INT NOT NULL,
     rooms INT NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'created',
-    moderator_id VARCHAR(255),
+    moderator_id UUID,
     UNIQUE (flat_number, house_id)
 );
