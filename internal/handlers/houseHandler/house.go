@@ -67,7 +67,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		Year:      house.YearBuilt,
 		Developer: checkString(house.Builder),
 		CreatedAt: house.CreatedAt,
-		UpdateAt:  *house.LastFlatAdded,
+		UpdateAt:  house.CreatedAt,
 	}
 
 	h.logger.Info("House created successfully", slog.String("op", op), slog.Int("house_id", house.ID))
