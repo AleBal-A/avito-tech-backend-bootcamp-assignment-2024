@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15.3
+    container_name: estate_service_db
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: "avito_db"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - real_estate_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d avito_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: migrator_service
+    entrypoint: [ "./migrator", "--migrations-path=./migrations" ]
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "avito_db"
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      CONFIG_PATH: ${CONFIG_PATH}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - real_estate_net
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: real_estate_service
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: "avito_db"
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      CONFIG_PATH: ${CONFIG_PATH}
+    ports:
+      - ${PORT}:${PORT}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
+    networks:
+      - real_estate_net
+
+volumes:
+  db_data:
+
+networks:
+  real_estate_net:
+
+# Required variables:
+# ${DB_USER}     "myuser"
+# ${DB_PASSWORD} "dbpassword"
+# ${JWT_SECRET}  "secret token"
+# ${CONFIG_PATH} default: ./config/cfg.yaml
+# ${PORT}        8080 / 8083

@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	fmt.Println("Starting of estate-service")
+	fmt.Println("Launching settings...")
 
 	// load config
 	cfg := config.MustLoad()
@@ -19,9 +19,7 @@ func main() {
 
 	// setup logger
 	log := logger.SetupLogger(cfg.Logger.Level)
-	log.Info("Avito Real-Estate service started", slog.String("env", cfg.Logger.Level))
-	log.Debug("Debug message for test")
-	log.Error("error message are enabled")
+	log.Info("Real-Estate service loading...", slog.String("env", cfg.Logger.Level))
 
 	// DB connection
 	conn, err := storage.New(cfg)
@@ -29,6 +27,9 @@ func main() {
 		log.Error("Could not connect to the database", "error", err)
 		panic(err)
 	}
+	log.Info("Successfully connected to the database", slog.String("host", cfg.Database.Host),
+		slog.String("db_name", cfg.Database.Name),
+	)
 	defer func() {
 		err = conn.Close()
 		if err != nil {
@@ -39,16 +40,24 @@ func main() {
 	authH, houseH, flatH := setup.InitLayers(conn, cfg, log)
 	router := setup.SetupRouter(authH, houseH, flatH, log)
 
+	srv := &http.Server{
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      router,
+		ReadTimeout:  cfg.Server.Timeout,
+		WriteTimeout: cfg.Server.Timeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
+	}
+
 	log.Info("Starting server on port ", slog.String("port", cfg.Server.Port))
 
-	err = http.ListenAndServe(":"+cfg.Server.Port, router)
+	err = srv.ListenAndServe()
 	if err != nil {
 		log.Error("Server startup error", "error", err)
 	}
 }
 
 /*
-	export JWT_SECRET="my_secret_key"
-	export DB_USER="user"
-	export DB_PASSWORD="password"
+	JWT_SECRET="my_secret_key"
+	DB_USER="user"
+	DB_PASSWORD="password"
 */
