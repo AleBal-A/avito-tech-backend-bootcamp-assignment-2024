@@ -26,3 +26,7 @@ CREATE TABLE IF NOT EXISTS flats (
     moderator_id UUID,
     UNIQUE (flat_number, house_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_flats_house_id ON flats(house_id);
+
+CREATE INDEX IF NOT EXISTS idx_flats_house_id_status ON flats(house_id, status);

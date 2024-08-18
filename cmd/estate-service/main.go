@@ -15,7 +15,7 @@ func main() {
 
 	// load config
 	cfg := config.MustLoad()
-	fmt.Println(cfg)
+	fmt.Println("This config Print needs to be removed in PROD...\n", cfg)
 
 	// setup logger
 	log := logger.SetupLogger(cfg.Logger.Level)
