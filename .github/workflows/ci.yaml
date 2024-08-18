@@ -39,10 +39,8 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
-      - name: Run tests with coverage
-        run: |
-          go test -v -coverprofile=coverage.out ./...
-          go tool cover -func=coverage.out
+      - name: Run tests
+        run: go test -coverprofile=coverage.txt ./...
         env:
           DB_HOST: localhost
           DB_PORT: "5432"
@@ -53,7 +51,7 @@ jobs:
           CONFIG_PATH: ${{ secrets.CONFIG_PATH }}
           PORT: ${{ secrets.PORT }}
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+      - name: Upload results to Codecov
+        uses: codecov/codecov-action@v4
         with:
-          file: ./coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}

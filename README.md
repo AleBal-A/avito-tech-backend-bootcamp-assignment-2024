@@ -1,9 +1,8 @@
 # Тестовое задание для отбора на Avito Backend Bootcamp
 ## Сервис домов
 
-![Build](https://github.com/AleBal-A/avito-tech-backend-bootcamp-assignment-2024/actions/workflows/ci.yml/badge.svg)
-![Coverage](https://codecov.io/gh/AleBal-A/avito-tech-backend-bootcamp-assignment-2024/branch/main/graph/badge.svg)
-
+[![CI](https://github.com/AleBal-A/avito-tech-backend-bootcamp-assignment-2024/actions/workflows/ci.yaml/badge.svg)](https://github.com/AleBal-A/avito-tech-backend-bootcamp-assignment-2024/actions/workflows/ci.yaml)
+[![codecov](https://codecov.io/gh/AleBal-A/avito-tech-backend-bootcamp-assignment-2024/graph/badge.svg?token=Q1UMC1Z972)](https://codecov.io/gh/AleBal-A/avito-tech-backend-bootcamp-assignment-2024)
 
 ## Описание
 
