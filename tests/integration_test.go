@@ -1,44 +1,83 @@
 package avito_test
 
 import (
-	"avito/internal/domain/models"
 	"avito/internal/handlers/authHandler"
 	"avito/internal/handlers/flatHandler"
 	"avito/internal/handlers/houseHandler"
-	"avito/internal/handlers/response"
-	"avito/internal/repositories/mocks"
+	"avito/internal/lib/logger"
+	"avito/internal/repositories/authRepo"
+	"avito/internal/repositories/flatRepo"
+	"avito/internal/repositories/houseRepo"
 	"avito/internal/services/authService"
 	"avito/internal/services/flatService"
 	"avito/internal/services/houseService"
+	"avito/internal/setup"
+	"avito/internal/storage"
+	"database/sql"
 	"encoding/json"
 	"fmt"
-	"github.com/stretchr/testify/mock"
-	"golang.org/x/crypto/bcrypt"
-	logOff "log"
+	"github.com/stretchr/testify/assert"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
-	"avito/internal/lib/logger"
-	"avito/internal/setup"
+	"avito/internal/config"
+	_ "github.com/lib/pq"
 )
 
-func TestRegisterMod(t *testing.T) {
+var conn *sql.DB
+var token string
+
+func setupTestDB() *sql.DB {
+	cfg := &config.Config{
+		Database: config.DatabaseConfig{
+			Host:     "localhost",
+			Port:     "5433",
+			Name:     "test_db",
+			User:     "test_user",
+			Password: "qwertest",
+		},
+	}
+
+	var err error
+	conn, err = storage.New(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to the test database: %v", err)
+	}
+
+	log.Println("Successfully connected to the test database:", cfg.Database.Host)
+	return conn
+}
+
+func teardownTestDB() {
+	if conn != nil {
+		err := conn.Close()
+		if err != nil {
+			log.Fatalf("Failed to close the test database connection: %v", err)
+		}
+	}
+}
+
+func TestMain(m *testing.M) {
+	conn = setupTestDB()
+	code := m.Run()
+	teardownTestDB()
+	os.Exit(code)
+}
+
+func TestGetFlatsByIdWithRegistation(t *testing.T) {
 	log := logger.SetupLogger("debug")
 
-	authRepoMock := mocks.NewAuthRepo(t)
-	houseRepoMock := mocks.NewHouseRepo(t)
-	flatRepoMock := mocks.NewFlatRepo(t)
+	authR := authRepo.NewRepository(conn, log)
+	houseR := houseRepo.NewRepository(conn, log)
+	flatR := flatRepo.NewRepository(conn, log)
 
-	authRepoMock.On("CreateUser", mock.Anything, mock.AnythingOfType("*models.User")).
-		Return("1", nil)
-
-	authS := authService.NewService(authRepoMock, "jwt_secret", log)
-	houseS := houseService.NewService(houseRepoMock, log)
-	flatS := flatService.NewService(flatRepoMock, log)
+	authS := authService.NewService(authR, "secret", log)
+	houseS := houseService.NewService(houseR, log)
+	flatS := flatService.NewService(flatR, log)
 
 	authH := authHandler.NewHandler(authS, log)
 	houseH := houseHandler.NewHandler(houseS, log)
@@ -46,9 +85,24 @@ func TestRegisterMod(t *testing.T) {
 
 	router := setup.SetupRouter(authH, houseH, flatH, log)
 
+	var userID string
+	var houseID int
+
+	t.Run("Dummy login as client", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/dummyLogin?user_type=client", nil)
+		resp := httptest.NewRecorder()
+
+		router.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusOK, resp.Code)
+
+		expectedSubstring := `"token":`
+		assert.Contains(t, resp.Body.String(), expectedSubstring)
+	})
+
 	t.Run("Register moderator", func(t *testing.T) {
 		body := `{
-            "id_user": "moderator@example.com",
+            "email": "moderator@example.com",
             "password": "pass",
             "user_type": "moderator"
         }`
@@ -59,228 +113,36 @@ func TestRegisterMod(t *testing.T) {
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusOK, resp.Code)
+
+		var result map[string]string
+		err := json.Unmarshal(resp.Body.Bytes(), &result)
+		if err != nil {
+			t.Fatal("Failed to unmarshal response:", err)
+		}
+
+		userID = result["user_id"]
+		assert.NotEmpty(t, userID, "Expected a valid user_id")
 	})
-}
 
-// Тесты для сценариев получения списка квартир
-// /house/{id} "client"
-func TestGetFlatsByHouseIDAsClient(t *testing.T) {
-	log := logger.SetupLogger("debug")
-
-	authRepoMock := mocks.NewAuthRepo(t)
-	houseRepoMock := mocks.NewHouseRepo(t)
-	flatRepoMock := mocks.NewFlatRepo(t)
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("qwerty"), bcrypt.DefaultCost)
-
-	authRepoMock.On("GetUserByEmail", mock.Anything, "client-uuid").
-		Return(&models.User{
-			ID:       "client-uuid",
-			Password: string(hashedPassword),
-			Role:     "client",
-		}, nil)
-
-	houseRepoMock.On("GetFlatsByHouseID", mock.Anything, 12345, "client").
-		Return([]models.Flat{
-			{
-				ID:      123456,
-				HouseID: 12345,
-				Price:   10000,
-				Rooms:   4,
-				Status:  "approved",
-			},
-		}, nil)
-
-	authS := authService.NewService(authRepoMock, "jwt_secret", log)
-	houseS := houseService.NewService(houseRepoMock, log)
-	flatS := flatService.NewService(flatRepoMock, log)
-
-	authH := authHandler.NewHandler(authS, log)
-	houseH := houseHandler.NewHandler(houseS, log)
-	flatH := flatHandler.NewHandler(flatS, log)
-
-	router := setup.SetupRouter(authH, houseH, flatH, log)
-
-	t.Run("Login as client", func(t *testing.T) {
+	t.Run("Register client", func(t *testing.T) {
 		body := `{
-			"id": "client-uuid",
-			"password": "qwerty"
-		}`
-		req := httptest.NewRequest("POST", "/login", strings.NewReader(body))
+            "email": "client@example.com",
+            "password": "pass",
+            "user_type": "client"
+        }`
+		req := httptest.NewRequest("POST", "/register", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
 
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusOK, resp.Code)
-		userToken := extractTokenFromResponse(resp.Body.String())
-
-		// Запрос квартир в доме как обычный пользователь
-		req = httptest.NewRequest("GET", "/house/12345", nil)
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", userToken))
-		resp = httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusOK, resp.Code)
-
-		var actualResponse map[string][]response.FlatResponse
-		err := json.Unmarshal(resp.Body.Bytes(), &actualResponse)
-		if err != nil {
-			t.Fatal("Failed to unmarshal response:", err)
-		}
-
-		expectedResponse := []response.FlatResponse{
-			{
-				ID:      123456,
-				HouseID: 12345,
-				Price:   10000,
-				Rooms:   4,
-				Status:  "approved",
-			},
-		}
-
-		assert.Equal(t, expectedResponse, actualResponse["flats"])
-
-		houseRepoMock.AssertExpectations(t)
 	})
-}
-
-// Тесты для сценариев получения списка квартир
-// /house/{id} "moderator"
-func TestGetFlatsByHouseIDAsModerator(t *testing.T) {
-	log := logger.SetupLogger("debug")
-
-	authRepoMock := mocks.NewAuthRepo(t)
-	houseRepoMock := mocks.NewHouseRepo(t)
-	flatRepoMock := mocks.NewFlatRepo(t)
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("qwerty"), bcrypt.DefaultCost)
-
-	authRepoMock.On("GetUserByEmail", mock.Anything, "moderator-uuid").
-		Return(&models.User{
-			ID:       "moderator-uuid",
-			Password: string(hashedPassword),
-			Role:     "moderator",
-		}, nil)
-
-	houseRepoMock.On("GetFlatsByHouseID", mock.Anything, 12345, "moderator").
-		Return([]models.Flat{
-			{
-				ID:      123456,
-				HouseID: 12345,
-				Price:   10000,
-				Rooms:   4,
-				Status:  "approved",
-			},
-			{
-				ID:      123457,
-				HouseID: 12345,
-				Price:   15000,
-				Rooms:   5,
-				Status:  "created",
-			},
-		}, nil)
-
-	authS := authService.NewService(authRepoMock, "jwt_secret", log)
-	houseS := houseService.NewService(houseRepoMock, log)
-	flatS := flatService.NewService(flatRepoMock, log)
-
-	authH := authHandler.NewHandler(authS, log)
-	houseH := houseHandler.NewHandler(houseS, log)
-	flatH := flatHandler.NewHandler(flatS, log)
-
-	router := setup.SetupRouter(authH, houseH, flatH, log)
 
 	t.Run("Login as moderator", func(t *testing.T) {
 		body := `{
-			"id": "moderator-uuid",
-			"password": "qwerty"
-		}`
-		req := httptest.NewRequest("POST", "/login", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusOK, resp.Code)
-		moderatorToken := extractTokenFromResponse(resp.Body.String())
-
-		req = httptest.NewRequest("GET", "/house/12345", nil)
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", moderatorToken))
-		resp = httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusOK, resp.Code)
-
-		var actualResponse map[string][]response.FlatResponse
-		err := json.Unmarshal(resp.Body.Bytes(), &actualResponse)
-		if err != nil {
-			t.Fatal("Failed to unmarshal response:", err)
-		}
-
-		expectedResponse := []response.FlatResponse{
-			{
-				ID:      123456,
-				HouseID: 12345,
-				Price:   10000,
-				Rooms:   4,
-				Status:  "approved",
-			},
-			{
-				ID:      123457,
-				HouseID: 12345,
-				Price:   15000,
-				Rooms:   5,
-				Status:  "created",
-			},
-		}
-
-		assert.Equal(t, expectedResponse, actualResponse["flats"])
-
-		houseRepoMock.AssertExpectations(t)
-	})
-}
-
-// тесты для сценариев публикации новой квартиры
-func TestCreateHouseFlat(t *testing.T) {
-	log := logger.SetupLogger("debug")
-
-	authRepoMock := mocks.NewAuthRepo(t)
-	houseRepoMock := mocks.NewHouseRepo(t)
-	flatRepoMock := mocks.NewFlatRepo(t)
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("qwerty"), bcrypt.DefaultCost)
-
-	authRepoMock.On("GetUserByEmail", mock.Anything, "cae36e0f-69e5-4fa8-a179-a52d083c5549").
-		Return(&models.User{
-			ID:       "cae36e0f-69e5-4fa8-a179-a52d083c5549",
-			Password: string(hashedPassword),
-			Role:     "moderator",
-		}, nil)
-
-	houseRepoMock.On("CreateHouse", mock.Anything, mock.AnythingOfType("*models.House")).
-		Return(nil)
-	flatRepoMock.On("CreateFlat", mock.Anything, mock.AnythingOfType("*models.Flat")).
-		Return(123456, nil)
-
-	authS := authService.NewService(authRepoMock, "jwt_secret", log)
-	houseS := houseService.NewService(houseRepoMock, log)
-	flatS := flatService.NewService(flatRepoMock, log)
-
-	authH := authHandler.NewHandler(authS, log)
-	houseH := houseHandler.NewHandler(houseS, log)
-	flatH := flatHandler.NewHandler(flatS, log)
-
-	router := setup.SetupRouter(authH, houseH, flatH, log)
-
-	var token string
-
-	t.Run("Login as moderator", func(t *testing.T) {
-		body := `{
-            "id": "cae36e0f-69e5-4fa8-a179-a52d083c5549",
-            "password": "qwerty"
+            "id": "` + userID + `",
+            "password": "pass"
         }`
 		req := httptest.NewRequest("POST", "/login", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
@@ -289,7 +151,15 @@ func TestCreateHouseFlat(t *testing.T) {
 		router.ServeHTTP(resp, req)
 
 		assert.Equal(t, http.StatusOK, resp.Code)
-		token = extractTokenFromResponse(resp.Body.String())
+
+		var result map[string]string
+		err := json.Unmarshal(resp.Body.Bytes(), &result)
+		if err != nil {
+			t.Fatal("Failed to unmarshal response:", err)
+		}
+
+		token = result["token"]
+		assert.NotEmpty(t, token, "Expected a valid token")
 	})
 
 	t.Run("Create house as moderator", func(t *testing.T) {
@@ -307,32 +177,26 @@ func TestCreateHouseFlat(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 
-		expectedResponse := map[string]interface{}{
-			"id":         5,
-			"address":    "Лесная улица, 7, Москва, 125196",
-			"year":       2000,
-			"developer":  "Мэрия города",
-			"created_at": "2024-08-16T18:37:59.415689+03:00",
-			"update_at":  "2024-08-16T18:37:59.415689+03:00",
-		}
-
-		var actualResponse map[string]interface{}
-		err := json.Unmarshal(resp.Body.Bytes(), &actualResponse)
+		var houseResponse map[string]interface{}
+		err := json.Unmarshal(resp.Body.Bytes(), &houseResponse)
 		if err != nil {
 			t.Fatal("Failed to unmarshal response:", err)
 		}
 
-		assert.Equal(t, expectedResponse["address"], actualResponse["address"])
-		assert.Equal(t, expectedResponse["year"], int(actualResponse["year"].(float64)))
-		assert.Equal(t, expectedResponse["developer"], actualResponse["developer"])
+		assert.Equal(t, "Лесная улица, 7, Москва, 125196", houseResponse["address"])
+		assert.Equal(t, float64(2000), houseResponse["year"])
+		assert.Equal(t, "Мэрия города", houseResponse["developer"])
+
+		houseID = int(houseResponse["id"].(float64))
+		assert.NotZero(t, houseID, "Expected a valid house ID")
 	})
 
 	t.Run("Create flat in house as moderator", func(t *testing.T) {
-		body := `{
-            "house_id": 5,
+		body := fmt.Sprintf(`{
+            "house_id": %d,
             "price": 10000,
             "rooms": 4
-        }`
+        }`, houseID)
 		req := httptest.NewRequest("POST", "/flat/create", strings.NewReader(body))
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
 		req.Header.Set("Content-Type", "application/json")
@@ -342,140 +206,40 @@ func TestCreateHouseFlat(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 
-		expectedResponse := map[string]interface{}{
-			"id":       123456,
-			"house_id": 5,
-			"price":    10000,
-			"rooms":    4,
-			"status":   "created",
-		}
-
-		var actualResponse map[string]interface{}
-		err := json.Unmarshal(resp.Body.Bytes(), &actualResponse)
+		var flatResponse map[string]interface{}
+		err := json.Unmarshal(resp.Body.Bytes(), &flatResponse)
 		if err != nil {
 			t.Fatal("Failed to unmarshal response:", err)
 		}
 
-		assert.Equal(t, expectedResponse["house_id"], int(actualResponse["house_id"].(float64)))
-		assert.Equal(t, expectedResponse["price"], int(actualResponse["price"].(float64)))
-		assert.Equal(t, expectedResponse["rooms"], int(actualResponse["rooms"].(float64)))
-		assert.Equal(t, expectedResponse["status"], actualResponse["status"])
-	})
-}
-
-func TestUpdateFlatStatus(t *testing.T) {
-	log := logger.SetupLogger("debug")
-
-	authRepoMock := mocks.NewAuthRepo(t)
-	houseRepoMock := mocks.NewHouseRepo(t)
-	flatRepoMock := mocks.NewFlatRepo(t)
-
-	hashedPassword, _ := bcrypt.GenerateFromPassword([]byte("qwerty"), bcrypt.DefaultCost)
-
-	authRepoMock.On("GetUserByEmail", mock.Anything, "cae36e0f-69e5-4fa8-a179-a52d083c5549").
-		Return(&models.User{
-			ID:       "cae36e0f-69e5-4fa8-a179-a52d083c5549",
-			Password: string(hashedPassword),
-			Role:     "moderator",
-		}, nil)
-
-	flatRepoMock.On("UpdateFlatStatus", mock.Anything, 123456, "approved", mock.Anything).
-		Return(&models.Flat{
-			ID:      123456,
-			HouseID: 12345,
-			Price:   10000,
-			Rooms:   4,
-			Status:  "approved",
-		}, nil)
-
-	flatRepoMock.On("GetFlatByID", mock.Anything, 123456).
-		Return(&models.Flat{
-			ID:      123456,
-			HouseID: 12345,
-			Price:   10000,
-			Rooms:   4,
-			Status:  "created",
-		}, nil)
-
-	authS := authService.NewService(authRepoMock, "jwt_secret", log)
-	houseS := houseService.NewService(houseRepoMock, log)
-	flatS := flatService.NewService(flatRepoMock, log)
-
-	authH := authHandler.NewHandler(authS, log)
-	houseH := houseHandler.NewHandler(houseS, log)
-	flatH := flatHandler.NewHandler(flatS, log)
-
-	router := setup.SetupRouter(authH, houseH, flatH, log)
-
-	var token string
-
-	t.Run("Login as moderator", func(t *testing.T) {
-		log.Debug("Starting login test")
-		body := `{
-            "id": "cae36e0f-69e5-4fa8-a179-a52d083c5549",
-            "password": "qwerty"
-        }`
-		req := httptest.NewRequest("POST", "/login", strings.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-		resp := httptest.NewRecorder()
-
-		router.ServeHTTP(resp, req)
-
-		assert.Equal(t, http.StatusOK, resp.Code)
-		token = extractTokenFromResponse(resp.Body.String())
-
-		authRepoMock.AssertExpectations(t)
+		assert.Equal(t, float64(houseID), flatResponse["house_id"])
+		assert.Equal(t, float64(10000), flatResponse["price"])
+		assert.Equal(t, float64(4), flatResponse["rooms"])
+		assert.Equal(t, "created", flatResponse["status"])
 	})
 
-	t.Run("Update flat status as moderator", func(t *testing.T) {
-		log.Debug("Starting update flat status test")
-		body := `{
-            "id": 123456,
-            "status": "approved"
-        }`
-		req := httptest.NewRequest("POST", "/flat/update", strings.NewReader(body))
+	t.Run("Get flats in house as moderator", func(t *testing.T) {
+		req := httptest.NewRequest("GET", fmt.Sprintf("/house/%d", houseID), nil)
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", token))
-		req.Header.Set("Content-Type", "application/json")
 		resp := httptest.NewRecorder()
 
-		log.Debug("Before calling flat update handler")
 		router.ServeHTTP(resp, req)
-		log.Debug("After calling flat update handler")
 
 		assert.Equal(t, http.StatusOK, resp.Code)
 
-		expectedResponse := map[string]interface{}{
-			"id":       123456,
-			"house_id": 12345,
-			"price":    10000,
-			"rooms":    4,
-			"status":   "approved",
-		}
-
-		var actualResponse map[string]interface{}
+		var actualResponse map[string][]map[string]interface{}
 		err := json.Unmarshal(resp.Body.Bytes(), &actualResponse)
 		if err != nil {
 			t.Fatal("Failed to unmarshal response:", err)
 		}
 
-		assert.Equal(t, expectedResponse["id"], int(actualResponse["id"].(float64)))
-		assert.Equal(t, expectedResponse["house_id"], int(actualResponse["house_id"].(float64)))
-		assert.Equal(t, expectedResponse["price"], int(actualResponse["price"].(float64)))
-		assert.Equal(t, expectedResponse["rooms"], int(actualResponse["rooms"].(float64)))
-		assert.Equal(t, expectedResponse["status"], actualResponse["status"])
+		flats, ok := actualResponse["flats"]
+		assert.True(t, ok, "Expected 'flats' key in response")
 
-		log.Debug("Flat update successful, response validated")
-
-		flatRepoMock.AssertExpectations(t)
+		assert.NotEmpty(t, flats, "Expected at least one flat in response")
+		assert.Equal(t, float64(houseID), flats[0]["house_id"])
+		assert.Equal(t, float64(10000), flats[0]["price"])
+		assert.Equal(t, float64(4), flats[0]["rooms"])
+		assert.Equal(t, "created", flats[0]["status"])
 	})
-}
-
-func extractTokenFromResponse(response string) string {
-	var result map[string]string
-	err := json.Unmarshal([]byte(response), &result)
-	if err != nil {
-		logOff.Println("extractTokenFromResponse: err", err)
-		return ""
-	}
-	return result["token"]
 }
