@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  test_db:
+    image: postgres:15.3
+    container_name: estate_service_test_db
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: qwertest
+      POSTGRES_DB: "test_db"
+    volumes:
+      - test_db_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - test_real_estate_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  test_runner:
+    build:
+      context: ..
+      dockerfile: tests/Dockerfile
+    container_name: test_runner_service
+    environment:
+      DB_HOST: test_db
+      DB_PORT: "5433"
+      DB_NAME: "test_db"
+      DB_USER: test_user
+      DB_PASSWORD: qwertest
+      CONFIG_PATH: "./config/cfg.yaml"
+      JWT_SECRET: "secret"
+    depends_on:
+      test_db:
+        condition: service_healthy
+    networks:
+      - test_real_estate_net
+
+volumes:
+  test_db_data:
+
+networks:
+  test_real_estate_net:

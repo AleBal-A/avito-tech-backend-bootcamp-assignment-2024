@@ -27,6 +27,20 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      test_db:
+        image: postgres:15.3
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: qwertest
+          POSTGRES_DB: test_db
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
@@ -39,14 +53,29 @@ jobs:
       - name: Install dependencies
         run: go mod download
 
+      - name: Build migrator
+        run: go build -v -o ./bin/migrator ./cmd/migrator
+
+      - name: Build main service
+        run: go build -v -o ./bin/estate-service ./cmd/estate-service
+
+      - name: Run migrations on test_db
+        run: ./bin/migrator --db-url="postgres://test_user:qwertest@localhost:5433/test_db" --migrations-path=./migrations
+        env:
+          DB_HOST: localhost
+          DB_PORT: "5433"
+          DB_NAME: test_db
+          DB_USER: test_user
+          DB_PASSWORD: qwertest
+
       - name: Run tests
         run: go test -coverprofile=coverage.txt ./...
         env:
           DB_HOST: localhost
-          DB_PORT: "5432"
-          DB_NAME: avito_db
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_PORT: "5433"
+          DB_NAME: test_db
+          DB_USER: test_user
+          DB_PASSWORD: qwertest
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           CONFIG_PATH: ${{ secrets.CONFIG_PATH }}
           PORT: ${{ secrets.PORT }}

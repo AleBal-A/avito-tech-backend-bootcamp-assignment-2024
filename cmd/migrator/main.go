@@ -23,10 +23,10 @@ func main() {
 	flag.StringVar(&migrationsTable, "migrations-table", "migrations", "Name of migration table")
 	flag.Parse()
 
-	cfg := config.MustLoad()
-
 	// Если dbURL не задан флагом - происходит сборка из cfg
 	if dbURL == "" {
+		fmt.Println("Got URL!")
+		cfg := config.MustLoad()
 		dbURL = buildUrlFromCfg(cfg)
 		if dbURL == "" {
 			panic("db-url is required")
